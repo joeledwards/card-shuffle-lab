@@ -45,6 +45,9 @@ struct Args {
     /// Verify a previously saved run bundle without simulating.
     #[arg(long)]
     verify_run: Option<PathBuf>,
+    /// Exit with an error after saving if controls warn, are absent, or lack enough trials.
+    #[arg(long)]
+    strict_controls: bool,
 }
 
 /// Atomically reserve a new directory, including on simultaneous invocations.
@@ -367,6 +370,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("Reference: {reference_label}; computing differences and intervals"),
     ])?;
     let comparisons = compare_summaries(&summaries, &reference)?;
+    let health = control_health(&summaries, n, args.seed, args.trials);
+    let control_message = match health.status {
+        CheckStatus::Ok => {
+            "CONTROL CHECKS OK: no conservative alarm; this does not prove uniformity."
+        }
+        CheckStatus::Warning => {
+            "CONTROL WARNING: suspicious uniform controls; investigate before interpreting results."
+        }
+        CheckStatus::Inconclusive => {
+            "CONTROL CHECKS INCONCLUSIVE: insufficient trials or diagnostics (need >=1000)."
+        }
+        CheckStatus::NotRun => {
+            "CONTROL CHECKS NOT RUN: no single-operation uniform controls in this configuration."
+        }
+    };
+    eprintln!("{control_message}");
     progress.update(&[
         "Run phase 3/3: save manifest and print results".into(),
         format!(
@@ -388,6 +407,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "replay_scope": "same source, Cargo.lock, and target architecture; not a cross-language protocol",
         "os": std::env::consts::OS, "architecture": std::env::consts::ARCH,
         "build_provenance": provenance,
+        "control_health": health,
         "riffle_model": "standard GSR mathematical reference",
         "overhand_model": "uncalibrated uniform-cut packet hypothesis; 3..8 packets, clamped to N",
         "handling_time_model": {"status": "estimated constant-time model; not population-calibrated", "default_basis": "user reports about 6 seconds per riffle and 4 per overhand", "riffle_seconds": args.riffle_seconds, "overhand_seconds": args.overhand_seconds},
@@ -403,6 +423,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_vec_pretty(&manifest)?,
     )?;
     let mut report = Vec::new();
+    writeln!(report, "{control_message}")?;
     ui::report(&mut report, &summaries, &comparisons, n, false)?;
     fs::write(output.join("report.txt"), &report)?;
     artifacts::seal(&output)?;
@@ -420,7 +441,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "\nSaved self-contained bundle (source, compiler, manifest, CSVs, report, checksums) in {}",
         output.display()
     )?;
+    writeln!(stdout, "{control_message}")?;
     ui::report(&mut stdout, &summaries, &comparisons, n, ui::stdout_color())?;
+    if args.strict_controls && health.status != CheckStatus::Ok {
+        return Err(
+            "strict control checks did not pass; results were preserved for investigation".into(),
+        );
+    }
     Ok(())
 }
 

@@ -5,6 +5,8 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
 pub mod artifacts;
+mod control_checks;
+pub use control_checks::{control_health, CheckStatus, ControlHealth};
 mod analysis;
 mod simulation;
 pub use analysis::{compare_summaries, MeanDifference, ScheduleComparison, Summary};

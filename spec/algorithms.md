@@ -233,3 +233,13 @@ Git metadata. Source-content hashes are authoritative; Git metadata alone is
 insufficient for uncommitted builds. The bundle includes a plain report and
 SHA-256 inventory. Verification rejects changed/missing/extra files and symlinks;
 checksums do not establish authenticity. A run is incomplete until sealed.
+
+
+Single-operation Fisher–Yates/insertion controls are checked on all four means
+against their analytic expectations. With >=1000 trials, a deviation exceeding
+six estimated standard errors triggers a warning. Nonzero deviation with zero
+sample variance also warns. First-64 trial RNG prefixes are checked for repeats.
+Missing controls or insufficient diagnostics/trials are labeled explicitly.
+The guard is a conservative heuristic under a normal approximation; it is not
+an exact familywise test or proof of correct permutation sampling. Strict mode
+preserves evidence then returns an unsuccessful exit unless controls are OK.

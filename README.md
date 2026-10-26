@@ -131,7 +131,7 @@ Run isolated checks explicitly:
 The Cargo wrapper uses `rustup run 1.99.1` without automatic installation. If
 tooling or dependencies are missing, rerun `scripts/setup` explicitly.
 
-## Preserved results
+## Preserved results and automatic controls
 
 Every new schema-4 run creates a self-contained bundle containing:
 
@@ -158,6 +158,15 @@ working tree has changed since compilation. An interrupted run remains incomplet
 or lacks a valid checksum inventory. Earlier user-provided results cannot be
 retroactively recovered from a pasted table; retain the original run files if
 available, or generate a new preserved run.
+
+Uniform controls are checked automatically against four analytic expectations.
+An alarm requires a departure beyond six estimated standard errors with at least
+1,000 trials, or a repeated RNG prefix among the first 64 addressed trials.
+Smaller runs are labeled inconclusive; custom suites without single-operation
+uniform controls are labeled not checked. One missed 95% interval is not an
+alarm. This conservative normal-approximation guard is not a proof, an exact
+familywise test, or a replacement for tests of richer distributions.
+`--strict-controls` saves results then exits unsuccessfully unless checks are OK.
 
 ## Experiments (commands to run explicitly)
 
