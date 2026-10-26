@@ -1,0 +1,72 @@
+#!/bin/sh
+# Explicit network bootstrap. Everyday wrappers never invoke this script.
+set -eu
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$repo_dir/scripts/tooling-env"
+rust_version=1.99.1
+printf 'Tooling directory: %s\nRust version: %s\n' "$tools_dir" "$rust_version"
+for utility in curl tar; do
+    command -v "$utility" >/dev/null 2>&1 || { echo "Missing setup prerequisite: $utility" >&2; exit 1; }
+done
+verify() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$1" | cut -d ' ' -f 1)
+    else
+        actual=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
+    fi
+    [ "$actual" = "$2" ] || { echo "SHA-256 verification failed: $1" >&2; exit 1; }
+}
+case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64) host=x86_64-unknown-linux-gnu ;;
+    Linux/aarch64) host=aarch64-unknown-linux-gnu ;;
+    Darwin/x86_64) host=x86_64-apple-darwin ;;
+    Darwin/arm64) host=aarch64-apple-darwin ;;
+    *) echo 'Unsupported bootstrap platform; install local Rust explicitly (see README).' >&2; exit 1 ;;
+esac
+mkdir -p "$tools_dir/bootstrap"
+if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
+    echo 'Downloading rustup installer and its published checksum...'
+    installer="$tools_dir/bootstrap/rustup-init"
+    url="https://static.rust-lang.org/rustup/dist/$host/rustup-init"
+    curl --fail --location --proto '=https' --tlsv1.2 "$url" -o "$installer"
+    curl --fail --location --proto '=https' --tlsv1.2 "$url.sha256" -o "$installer.sha256"
+    verify "$installer" "$(cut -d ' ' -f 1 "$installer.sha256")"
+    chmod +x "$installer"
+    "$installer" --no-modify-path --profile minimal --default-toolchain "$rust_version" -y
+else
+    echo 'Installing/verifying the pinned Rust toolchain...'
+    "$CARGO_HOME/bin/rustup" toolchain install "$rust_version" --profile minimal
+    "$CARGO_HOME/bin/rustup" default "$rust_version"
+fi
+"$CARGO_HOME/bin/rustup" component add rustfmt clippy --toolchain "$rust_version"
+if ! command -v cc >/dev/null 2>&1; then
+    [ "$host" = x86_64-unknown-linux-gnu ] || { echo 'No cc linker; local fallback currently supports x86_64 Linux only.' >&2; exit 1; }
+    linker_dir="$tools_dir/linker"
+    zig_version=0.17.0
+    zig_dir="$linker_dir/zig-x86_64-linux-$zig_version"
+    if [ ! -x "$zig_dir/zig" ]; then
+        echo 'No system cc; downloading the local Zig linker...'
+        mkdir -p "$linker_dir"
+        archive="$linker_dir/zig.tar.xz"
+        curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://ziglang.org/download/$zig_version/zig-x86_64-linux-$zig_version.tar.xz" -o "$archive"
+        verify "$archive" 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+        if command -v xz >/dev/null 2>&1; then
+            tar -xJf "$archive" -C "$linker_dir"
+        elif command -v python3 >/dev/null 2>&1; then
+            echo 'xz is absent; using existing Python standard library to unpack (no packages or environment).'
+            python3 - "$archive" "$linker_dir" <<'PY_UNPACK'
+import sys, tarfile
+with tarfile.open(sys.argv[1], "r:xz") as archive:
+    archive.extractall(sys.argv[2], filter="data")
+PY_UNPACK
+        else
+            echo 'Unpacking the verified linker requires xz or an existing Python 3 with lzma/tarfile support.' >&2
+            exit 1
+        fi
+    fi
+    printf '%s\n' "$zig_version" > "$linker_dir/version.txt"
+fi
+echo 'Fetching locked dependencies (no simulations)...'
+"$repo_dir/scripts/cargo-local" fetch --locked --manifest-path "$repo_dir/Cargo.toml"
+echo 'Setup complete. Run scripts/lab from the checkout, or scripts/cargo-local test --locked --offline.'

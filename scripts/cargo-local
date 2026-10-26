@@ -1,17 +1,13 @@
 #!/bin/sh
 set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-workspace_dir=$(CDPATH= cd -- "$repo_dir/../.." && pwd)
-export CARGO_HOME="$workspace_dir/.tools/rust/cargo"
-export RUSTUP_HOME="$workspace_dir/.tools/rust/rustup"
-export PATH="$CARGO_HOME/bin:$PATH"
-export CARGO_TARGET_DIR="$repo_dir/target"
+. "$repo_dir/scripts/tooling-env"
 if [ ! -x "$CARGO_HOME/bin/cargo" ]; then
-    echo "Workspace-local Rust is missing. See $repo_dir/README.md for explicit setup." >&2
+    echo "Workspace-local Rust is missing. Run $repo_dir/scripts/setup explicitly." >&2
     exit 1
 fi
 # Use the explicitly installed local linker only when no host cc is available.
-if ! command -v cc >/dev/null 2>&1 && [ -f "$workspace_dir/.tools/rust/linker/version.txt" ]; then
+if ! command -v cc >/dev/null 2>&1 && [ -f "$tools_dir/linker/version.txt" ]; then
     export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$repo_dir/scripts/linker-local"
 fi
-exec "$CARGO_HOME/bin/cargo" "$@"
+exec "$CARGO_HOME/bin/rustup" run 1.99.1 cargo "$@"

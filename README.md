@@ -96,60 +96,40 @@ Terminal labels use `rif` for riffles and `ovr` for overhands: `7rif`,
 older identifiers such as `7R`. Existing JSON identifiers and seeds are retained
 for compatibility; custom names are displayed as supplied.
 
-## Explicit local tooling
-
-The Cargo wrapper never installs or bootstraps tooling.
-Rust, Cargo, their caches, and future toolchain files belong under the workspace's
-`.tools/rust/`. No Python environment is needed.
-
-Developer-only setup, from this repository directory, after obtaining a trusted
-rustup-init executable (network access and dependency downloads are explicit):
+## Setup from a fresh checkout
 
 ```sh
-workspace_dir=$(CDPATH= cd ../.. && pwd)
-export CARGO_HOME="$workspace_dir/.tools/rust/cargo"
-export RUSTUP_HOME="$workspace_dir/.tools/rust/rustup"
-# Run your verified installer; do not use a host-global installation:
-/path/to/rustup-init --no-modify-path --profile minimal --default-toolchain stable -y
-./scripts/cargo-local generate-lockfile
-./scripts/cargo-local test --lib --locked
+./scripts/setup
+./scripts/lab
 ```
 
-Cargo.lock is now generated and should be retained in version control. Use
-`--locked` for tests and experiments to prevent dependency resolution changes. Dependency resolution and builds
-require downloads on first use. The wrapper derives paths from its own location
-and preserves the caller's working directory; run the following from this repo,
-or supply Cargo's --manifest-path when calling it from elsewhere.
+`setup` is the explicit network step: it installs Rust 1.99.1 with formatting and
+lint tools, fetches dependencies from Cargo.lock, and installs a checksum-verified
+local Zig linker if no system `cc` exists on x86_64 Linux. It never runs an
+experiment. Prerequisites are a POSIX shell, curl, tar, and sha256sum (or shasum).
+Unpacking the optional linker uses xz, with an existing Python 3 standard-library
+unpacker as fallback; no Python packages or virtual environment are installed. Bootstrap supports Linux x86_64/aarch64 and macOS
+x86_64/arm64; the no-cc linker fallback is currently x86_64 Linux only. Other
+platforms need explicit local toolchain setup. Only x86_64 Linux has been tested.
 
-### Linker in minimal Linux environments
+Toolchains and caches live under `.tools/rust/`: in this managed workspace they
+use the workspace directory, while an independent checkout uses its own directory.
+`SHUFFLE_TOOLS_DIR=/absolute/path/to/.tools/rust` overrides that location. Keep
+that override inside the active workspace. No host-global installation, shell
+profile modification, or automatic download occurs in everyday wrappers.
+The wrappers derive their paths from their own location and preserve your
+working directory. Cargo build output remains in the checkout's `target/`.
 
-This workspace has no system `cc`. A checksum-verified Zig 0.17.0 distribution
-is installed under `.tools/rust/linker/zig-x86_64-linux-0.17.0`, with
-`version.txt` containing `0.17.0`. `scripts/cargo-local` selects
-`scripts/linker-local` when no `cc` exists. Both Zig cache directories remain
-under `.tools/rust/linker/`; no host package installation is needed. The wrapper
-currently supports this fallback for x86_64 GNU/Linux only.
-
-For a new environment, explicitly download the official archive and verify it
-before extracting (commands from the repository directory):
+Run isolated checks explicitly:
 
 ```sh
-workspace_dir=$(CDPATH= cd ../.. && pwd)
-linker_dir="$workspace_dir/.tools/rust/linker"
-mkdir -p "$linker_dir"
-curl --fail --location --proto '=https' --tlsv1.2 \
-  https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz \
-  -o "$linker_dir/zig.tar.xz"
-(cd "$linker_dir" && printf '%s  zig.tar.xz\n' \
-  1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026 | sha256sum -c -)
-tar -xJf "$linker_dir/zig.tar.xz" -C "$linker_dir"
-printf '%s\n' 0.17.0 > "$linker_dir/version.txt"
+./scripts/cargo-local test --lib --bin card-shuffle-lab --locked --offline
+./scripts/cargo-local fmt --check
+./scripts/cargo-local clippy --all-targets --locked --offline -- -D warnings
 ```
 
-Stop if download or verification fails. Rustfmt and Clippy are optional Rust
-components; install explicitly using the workspace-local rustup with CARGO_HOME
-and RUSTUP_HOME set as above. See [validation results](spec/validation.md) for
-the installed compiler and completed checks.
+The Cargo wrapper uses `rustup run 1.99.1` without automatic installation. If
+tooling or dependencies are missing, rerun `scripts/setup` explicitly.
 
 ## Experiments (commands to run explicitly)
 

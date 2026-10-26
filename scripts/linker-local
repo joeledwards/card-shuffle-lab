@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-workspace_dir=$(CDPATH= cd -- "$repo_dir/../.." && pwd)
-linker_dir="$workspace_dir/.tools/rust/linker"
+. "$repo_dir/scripts/tooling-env"
+linker_dir="$tools_dir/linker"
 if [ ! -f "$linker_dir/version.txt" ]; then
     echo "Local Zig linker is missing; see README.md." >&2
     exit 1

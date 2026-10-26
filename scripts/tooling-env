@@ -1,0 +1,14 @@
+# Sourced by project scripts; does not install or download anything.
+# repo_dir must be the calling script's absolute repository directory.
+if [ -n "${SHUFFLE_TOOLS_DIR:-}" ]; then
+    case "$SHUFFLE_TOOLS_DIR" in /*) ;; *) echo 'SHUFFLE_TOOLS_DIR must be absolute' >&2; exit 1 ;; esac
+    tools_dir=$SHUFFLE_TOOLS_DIR
+elif [ "$(basename -- "$(dirname -- "$repo_dir")")" = repos ] && [ -f "$repo_dir/../../AGENTS.md" ]; then
+    tools_dir=$(CDPATH= cd -- "$repo_dir/../.." && pwd)/.tools/rust
+else
+    tools_dir="$repo_dir/.tools/rust"
+fi
+export CARGO_HOME="$tools_dir/cargo"
+export RUSTUP_HOME="$tools_dir/rustup"
+export PATH="$CARGO_HOME/bin:$PATH"
+export CARGO_TARGET_DIR="$repo_dir/target"
