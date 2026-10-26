@@ -1,13 +1,18 @@
 //! Transparent reference shuffle models. See spec/algorithms.md.
-use rand::Rng;
 use rand::SeedableRng;
+use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
 mod analysis;
+mod simulation;
 pub use analysis::{compare_summaries, MeanDifference, ScheduleComparison, Summary};
+pub use simulation::{
+    effective_workers, simulate_batches, simulate_cases, ParallelMode, SimulationEvent,
+    TRIAL_BATCH_SIZE,
+};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Operation {
@@ -77,13 +82,49 @@ pub fn placement_schedules() -> Vec<Schedule> {
     schedules
 }
 
+/// Expanded experiment: preserve the placement suite, then include riffle-only
+/// and overhand-only baselines. Existing stream IDs are never renumbered.
+pub fn experiment_schedules() -> Vec<Schedule> {
+    let mut schedules = placement_schedules();
+    for count in 4..=10 {
+        if count == 7 {
+            continue;
+        }
+        schedules.push(Schedule {
+            name: format!("{count}R"),
+            stream_id: 20 + count as u64,
+            operations: vec![Operation::Riffle; count],
+        });
+    }
+    for count in 1..=10 {
+        schedules.push(Schedule {
+            name: format!("{count}O"),
+            stream_id: 40 + count as u64,
+            operations: vec![Operation::Overhand; count],
+        });
+    }
+    for (count, name, stream_id) in [(5, "5R+5O-interlaced", 61), (7, "7R-7O-interlaced", 62)] {
+        schedules.push(Schedule {
+            name: name.into(),
+            stream_id,
+            operations: (0..count)
+                .flat_map(|_| [Operation::Riffle, Operation::Overhand])
+                .collect(),
+        });
+    }
+    schedules
+}
+
 /// Separate ChaCha streams for every (schedule, trial); no hash-dependent seeding.
 pub fn trial_rng(seed: u64, stream_id: u64, trial: u64) -> ChaCha8Rng {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    rng.set_stream(stream_id);
-    // Each trial has 2^64 32-bit words available. Trials are addressed, not iterated.
-    rng.set_word_pos((trial as u128) << 64);
-    rng
+    let mut parent = ChaCha8Rng::seed_from_u64(seed);
+    parent.set_stream(stream_id);
+    // A 32-byte child seed occupies eight words. Even trial=u64::MAX
+    // stays below 2^67 words, inside ChaCha's 68-bit position space.
+    parent.set_word_pos(u128::from(trial) * 8);
+    let mut child_seed = [0u8; 32];
+    parent.fill_bytes(&mut child_seed);
+    ChaCha8Rng::from_seed(child_seed)
 }
 
 pub fn fisher_yates<R: Rng + ?Sized>(deck: &mut [usize], rng: &mut R) {
@@ -284,6 +325,54 @@ mod tests {
     }
 
     #[test]
+    fn expanded_experiment_preserves_existing_streams_and_covers_baselines() {
+        let schedules = experiment_schedules();
+        assert_eq!(schedules.len(), 26);
+        assert_eq!(
+            serde_json::to_value(&schedules[..8]).unwrap(),
+            serde_json::to_value(placement_schedules()).unwrap()
+        );
+        let ids: std::collections::HashSet<_> = schedules.iter().map(|s| s.stream_id).collect();
+        let names: std::collections::HashSet<_> = schedules.iter().map(|s| &s.name).collect();
+        assert_eq!(ids.len(), 26);
+        assert_eq!(names.len(), 26);
+        for count in 4..=10 {
+            let sequence = schedules
+                .iter()
+                .find(|s| s.name == format!("{count}R"))
+                .unwrap();
+            assert_eq!(sequence.operations, vec![Operation::Riffle; count]);
+        }
+        for count in 1..=10 {
+            let sequence = schedules
+                .iter()
+                .find(|s| s.name == format!("{count}O"))
+                .unwrap();
+            assert_eq!(sequence.operations, vec![Operation::Overhand; count]);
+        }
+    }
+
+    #[test]
+    fn interlaced_sequences_alternate_riffle_then_overhand() {
+        let sequences = experiment_schedules();
+        for (name, count, id) in [("5R+5O-interlaced", 5, 61), ("7R-7O-interlaced", 7, 62)] {
+            let sequence = sequences.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(sequence.stream_id, id);
+            assert_eq!(sequence.operations.len(), count * 2);
+            for pair in sequence.operations.as_chunks::<2>().0 {
+                assert_eq!(*pair, [Operation::Riffle, Operation::Overhand]);
+            }
+        }
+        for count in 1..=10 {
+            let sequence = sequences
+                .iter()
+                .find(|s| s.name == format!("{count}O"))
+                .unwrap();
+            assert_eq!(sequence.stream_id, 40 + count as u64);
+        }
+    }
+
+    #[test]
     fn packet_direction() {
         assert_eq!(
             transfer_packets(&[0, 1, 2, 3, 4, 5], &[2, 1, 3]).unwrap(),
@@ -362,6 +451,43 @@ mod tests {
             identity += usize::from(deck == [0, 1]);
         }
         assert!((2800..=3200).contains(&identity), "{identity}");
+    }
+
+    #[test]
+    fn independently_addressed_controls_match_small_deck_targets() {
+        for op in [Operation::FisherYates, Operation::Insertion] {
+            let mut stats: [Moments; 4] = std::array::from_fn(|_| Moments::default());
+            for trial in 0..2048 {
+                let mut deck: Vec<_> = (0..5).collect();
+                apply(&mut deck, op, &mut trial_rng(20261026, 99, trial));
+                let d = diagnostics(&deck);
+                for (m, value) in stats.iter_mut().zip([
+                    d.original_neighbor_adjacency_fraction,
+                    d.mean_original_neighbor_distance,
+                    d.increasing_runs,
+                    d.mean_absolute_displacement,
+                ]) {
+                    m.add(value);
+                }
+            }
+            // Broad deterministic regression bound; not a proof of uniformity.
+            for (m, target) in stats.iter().zip([0.4, 2.0, 3.0, 1.6]) {
+                assert!(
+                    (m.mean - target).abs() < 6.0 * m.mean_variance().unwrap().sqrt(),
+                    "{op:?}: {m:?} target {target}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trial_streams_do_not_repeat_after_sixteen_trials() {
+        let mut seen = std::collections::HashSet::new();
+        for trial in (0..1024).chain([u64::MAX - 16, u64::MAX]) {
+            let mut rng = trial_rng(20261026, 1, trial);
+            let words: Vec<_> = (0..8).map(|_| rng.next_u64()).collect();
+            assert!(seen.insert(words), "repeated stream at trial {trial}");
+        }
     }
 
     #[test]

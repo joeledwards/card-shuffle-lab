@@ -8,13 +8,21 @@ least two trials. Every operation preserves all IDs exactly once.
 
 `integer(a,b)` is uniform over inclusive endpoints, with unbiased range sampling.
 Each new draw is independent in the mathematical model. Bernoulli(1/2) is a
-fair coin. The implementation uses rand 0.8 and ChaCha8Rng 0.3. A trial initializes
-`seed_from_u64(master_seed)`, selects the schedule's explicit u64 stream ID,
-and seeks to word position `trial_index * 2^64` (32-bit words). A trial must not
-consume 2^64 words. Streams are intended as independent pseudorandom streams,
-not a mathematical proof of independence. Adding or reordering schedules does
-not change existing streams. Duplicate stream IDs are rejected. No paired
+fair coin. RNG protocol version 2 uses rand 0.8 and ChaCha8Rng 0.3.
+Initialize a parent with `seed_from_u64(master_seed)` and select the schedule's
+explicit u64 stream ID. Seek to `trial_index * 8` in 32-bit words, read 32 bytes,
+and initialize a fresh child with `ChaCha8Rng::from_seed(child_seed)`. All shuffle
+draws for that trial use the child. For every u64 trial index the parent reads
+lie below 2^67 words, within ChaCha's 68-bit position space. Distinct trials read
+non-overlapping child-seed blocks. This is pseudorandom key derivation, not a
+proof of independence or absence of seed collisions. Adding/reordering schedules
+does not change existing streams. Duplicate stream IDs are rejected. No paired
 coupling is used.
+
+Output schema 3 records `rng_protocol_version=2`. Earlier schemas used the
+invalid offset `trial_index * 2^64`, which wrapped every 16 trials. Their trial
+results and confidence intervals must not be used for scientific conclusions.
+The corrected protocol intentionally changes all seeded numerical outputs.
 
 Replay requires the same source, dependency lockfile, and target architecture;
 this is not a cross-language bit-for-bit protocol. Archive the generated
@@ -65,8 +73,8 @@ unique `stream_id`, and `operations`, whose enum values are `Riffle`, `Overhand`
 and 7R followed by 2O. Custom lists can express any placement or operation count.
 Random placement generation and human error/restart profiles are deferred.
 
-Handling time is a configurable constant per riffle and overhand (initial
-hypotheses: 3 and 2 seconds). Controls have no estimated handling time.
+Handling time is a configurable constant per riffle and overhand (defaults:
+6 and 4 seconds, based on user-reported personal handling estimates). Controls have no estimated handling time.
 Compute wall time is measured separately. These assumptions do not establish
 an equal-time comparison or describe real human performance.
 
@@ -132,3 +140,85 @@ constant-time hypothesis, with null for comparisons involving uniform controls.
 All four 5R+2O placements have identical hypothetical handling time, so their
 comparison holds operation counts and assumed time fixed; comparison against
 7R holds total operation count fixed, not handling time.
+
+### Approachable CLI defaults
+
+The CLI now selects all 26 experiment-suite sequences by default, with N=52,
+100,000 trials per sequence and seed 20261026. The library's original five-sequence
+`default_schedules()` remains unchanged for callers. `--placement-comparison`
+is retained as a hidden compatibility option. Custom files still replace the
+built-in suite. Omitting `--output` atomically reserves a fresh directory beneath
+`output/`, relative to the caller's working directory; explicit paths still
+refuse overwrites. This does not change the schema or random process.
+
+
+### Terminal summary grid
+
+The final report includes every sequence with mean adjacency fraction, original
+neighbor distance, increasing runs, displacement, and hypothetical handling time.
+A uniform-target row uses the formulas above, expected runs (N+1)/2, and expected
+absolute displacement (N²-1)/(3N). Markers compare unrounded pointwise mean CIs
+to those targets: `+` entirely above, `-` entirely below, `=` includes the target,
+`?` interval unavailable. Missing metrics show `n/a`. These are descriptive
+comparisons, without multiple-comparison correction or an overall success score.
+
+
+### Parallel execution and expanded baselines
+
+The expanded default preserves the original eight sequences and stream IDs.
+It appends riffles alone for counts 4,5,6,8,9,10 (stream ID 20+count) and
+overhands alone for counts 1..4 (ID 40+count). The existing 7R completes the
+4..10 riffle series. All comparisons still default to reference 7R.
+
+The execution layer supports a shared case pool and one-case-at-a-time trial
+parallelism; see the dispatch specification below. Both preserve trial order
+within each case and RNG addresses across worker counts and modes. Raw decks
+are not persisted. Partial final batches are allowed. Errors abort the run and
+may leave partial output. The manifest records mode, workers, CPUs, and batch size.
+
+### Additional overhands and interlaced cases
+
+The default now includes 1..10 overhands (IDs 40+count), preserving all earlier
+streams and appending counts 5..10 after the original 18 cases. It then appends
+`5R+5O-interlaced` (ID 61) and `7R-7O-interlaced` (ID 62). Display labels are
+`5rif+5ovr-interlaced` and `7rif-7ovr-interlaced`. The plus/hyphen in those labels
+is naming punctuation, not an operation: both mean `[Riffle, Overhand]` repeated
+5 or 7 times, respectively. Riffle always comes first. Comparisons remain against
+7rif by default; use --reference to choose another case. Counts/timing differ
+between these cases, so compare their metrics alongside their modeled effort.
+
+
+### Shared pool dispatch
+
+`--parallel cases` is the default. `--parallel trials` preserves the earlier
+one-case-at-a-time approach. The CLI caps `--workers` at available logical CPU
+parallelism, with a fallback of one CPU, and caps workers by total available
+batch jobs (per case in trials mode). Case-mode workers are persistent threads.
+
+A batch comprises at most 128 consecutive trials in a single case. Select a
+case with undispatched trials minimizing its assigned batch count (queued or
+executing, not yet reported complete). Zero assigned batches has first priority.
+Break ties by scanning cyclically from the case after the last dispatch. Thus
+starved cases are preferred before giving extra workers to other cases.
+When few cases remain, their batches can occupy multiple workers.
+
+Dispatch at most `workers` batches not yet consumed, including buffered results.
+Workers send start and completed-batch events to one coordinator. The coordinator
+buffers out-of-order batches separately by case, then aggregates each case's
+trials strictly in increasing index order. Slots are released as those results
+are consumed. A slow earlier batch may delay redispatch, a deliberate bound on
+memory rather than retaining arbitrary completed permutations. Failure closes
+both queues before joining workers, preventing blocked sends/receives on exit.
+
+The UI handles all progress centrally. Viewport filtering prioritizes all active
+cases that fit; hidden cases retain state. Summaries and comparisons remain in
+configuration order, regardless of completion order. No cross-case pairing or
+change to statistical confidence-interval assumptions is introduced.
+
+
+Default handling estimates are personal reports, not population calibration or
+measured durations of these simulations. Seven riffles estimate 42 seconds;
+seven overhands estimate 28 seconds; five riffles plus two overhands estimate
+38 seconds. The constant model assumes additive times without transitions,
+fatigue, or error penalties. The manifest records the default basis alongside
+actual configured values. The grid labels handling time `Human Time s`.
