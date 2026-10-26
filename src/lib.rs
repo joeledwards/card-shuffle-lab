@@ -4,6 +4,7 @@ use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
+pub mod artifacts;
 mod analysis;
 mod simulation;
 pub use analysis::{compare_summaries, MeanDifference, ScheduleComparison, Summary};
@@ -12,7 +13,7 @@ pub use simulation::{
     TRIAL_BATCH_SIZE,
 };
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Operation {

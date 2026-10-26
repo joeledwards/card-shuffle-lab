@@ -12,7 +12,7 @@ Earlier output schemas 1 and 2 accidentally repeated trial RNG streams every
 16 trials. Increasing the trial count did not supply independent samples, and
 reported confidence intervals were invalid. Discard scientific conclusions from
 those runs. The corrected RNG protocol derives a separate child seed per trial;
-new manifests identify output schema 3 and `rng_protocol_version: 2`. Rebuild
+corrected manifests identify output schema 3 or later and `rng_protocol_version: 2`. Rebuild
 and rerun with `./scripts/lab` (or your prior `--trials` override). Seeded results
 will change. The historical validation table is retained but marked invalid.
 
@@ -130,6 +130,34 @@ Run isolated checks explicitly:
 
 The Cargo wrapper uses `rustup run 1.99.1` without automatic installation. If
 tooling or dependencies are missing, rerun `scripts/setup` explicitly.
+
+## Preserved results
+
+Every new schema-4 run creates a self-contained bundle containing:
+
+- `manifest.json`: configuration, RNG protocol 2, comparisons,
+  and build provenance.
+- CSV aggregates and a plain `report.txt` matching the terminal analysis.
+- `source/`: the exact build-time source, lockfile, specs, docs, and executable
+  scripts; `provenance.json`: compiler, source hashes, executable hash, and
+  supplementary Git metadata.
+- `run-status.json` and `checksums.json`: completion state and SHA-256 integrity
+  checks for all saved files. No raw permutations are stored.
+
+Verify before sharing or analyzing an archive:
+
+```sh
+./scripts/lab --verify-run output/run-YOUR-RUN
+```
+
+Verification rejects changed, missing, additional, or symlinked files. Checksums
+are not signatures; they detect changes, not authenticity. Keep personal notes
+outside a sealed bundle. Copy archived `source/` out before rebuilding; building
+inside the bundle adds files and invalidates its inventory. Source hashes describe compiled inputs even if the
+working tree has changed since compilation. An interrupted run remains incomplete
+or lacks a valid checksum inventory. Earlier user-provided results cannot be
+retroactively recovered from a pasted table; retain the original run files if
+available, or generate a new preserved run.
 
 ## Experiments (commands to run explicitly)
 
@@ -251,7 +279,7 @@ Without `--reference`, comparisons use `7R` when present, otherwise the first
 schedule. Custom `--schedules` files support the same reference option but cannot
 be combined with `--placement-comparison`.
 
-The current schema 3 retains `comparisons` to the manifest, including candidate/reference
+The current schema 4 retains `comparisons` to the manifest, including candidate/reference
 names and stream IDs, per-diagnostic candidate-minus-reference mean differences,
 approximate pointwise 95% confidence intervals, and hypothetical handling-time
 differences. Positive differences mean larger diagnostics, not better mixing.

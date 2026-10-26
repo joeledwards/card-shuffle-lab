@@ -222,3 +222,14 @@ seven overhands estimate 28 seconds; five riffles plus two overhands estimate
 38 seconds. The constant model assumes additive times without transitions,
 fatigue, or error penalties. The manifest records the default basis alongside
 actual configured values. The grid labels handling time `Human Time s`.
+
+
+### Schema 4: evidence bundles
+
+Schema 4 retains RNG protocol 2 and adds build provenance, command arguments,
+a sealed run bundle. Compile-time source bytes and
+Cargo.lock are embedded and written to source/ alongside compiler version and
+Git metadata. Source-content hashes are authoritative; Git metadata alone is
+insufficient for uncommitted builds. The bundle includes a plain report and
+SHA-256 inventory. Verification rejects changed/missing/extra files and symlinks;
+checksums do not establish authenticity. A run is incomplete until sealed.

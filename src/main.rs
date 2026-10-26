@@ -42,6 +42,9 @@ struct Args {
     /// Estimated handling seconds per overhand (default based on user-reported timing).
     #[arg(long, default_value_t = 4.0)]
     overhand_seconds: f64,
+    /// Verify a previously saved run bundle without simulating.
+    #[arg(long)]
+    verify_run: Option<PathBuf>,
 }
 
 /// Atomically reserve a new directory, including on simultaneous invocations.
@@ -128,6 +131,11 @@ fn resolve_reference(schedules: &[Schedule], requested: &str) -> Result<String, 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if let Some(path) = &args.verify_run {
+        let count = artifacts::verify(path)?;
+        println!("Verified {count} artifact checksums in {}", path.display());
+        return Ok(());
+    }
     if !args.riffle_seconds.is_finite()
         || args.riffle_seconds < 0.0
         || !args.overhand_seconds.is_finite()
@@ -164,6 +172,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reference = resolve_reference(&schedules, &requested_reference)?;
     let reference_label = ui::case_name(&reference);
     let output = create_output(args.output.as_deref())?;
+    fs::write(
+        output.join("run-status.json"),
+        b"{\"status\":\"incomplete\"}\n",
+    )?;
+    eprintln!(
+        "Preserving build source and compiler metadata in {}",
+        output.display()
+    );
+    let provenance = artifacts::preserve_build(&output)?;
     let start = Instant::now();
     let n = args.deck_size as usize;
     let available_cpus = std::thread::available_parallelism()
@@ -362,13 +379,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
         "program_version": env!("CARGO_PKG_VERSION"),
+        "arguments": std::env::args().collect::<Vec<_>>(),
+        "working_directory": std::env::current_dir()?.display().to_string(),
         "seed": args.seed, "trials": args.trials, "deck_size": n,
         "execution": {"workers": workers, "available_cpus": available_cpus, "batch_size": TRIAL_BATCH_SIZE, "aggregation": "serial trial order per case", "parallel_mode": args.parallel},
         "rng_protocol_version": 2,
         "rng": "v2: ChaCha8 parent seed_from_u64(master); stream=schedule.stream_id; word_pos=trial*8; read 32-byte child seed; child ChaCha8Rng::from_seed",
         "replay_scope": "same source, Cargo.lock, and target architecture; not a cross-language protocol",
         "os": std::env::consts::OS, "architecture": std::env::consts::ARCH,
-        "build_provenance": "Archive Cargo.lock, rustc -Vv, and source snapshot alongside results",
+        "build_provenance": provenance,
         "riffle_model": "standard GSR mathematical reference",
         "overhand_model": "uncalibrated uniform-cut packet hypothesis; 3..8 packets, clamped to N",
         "handling_time_model": {"status": "estimated constant-time model; not population-calibrated", "default_basis": "user reports about 6 seconds per riffle and 4 per overhand", "riffle_seconds": args.riffle_seconds, "overhand_seconds": args.overhand_seconds},
@@ -383,6 +402,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output.join("manifest.json"),
         serde_json::to_vec_pretty(&manifest)?,
     )?;
+    let mut report = Vec::new();
+    ui::report(&mut report, &summaries, &comparisons, n, false)?;
+    fs::write(output.join("report.txt"), &report)?;
+    artifacts::seal(&output)?;
     progress.update(&[
         "Run phase 3/3 complete: all files saved".into(),
         format!(
@@ -394,8 +417,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = std::io::stdout().lock();
     writeln!(
         stdout,
-        "\nSaved manifest and {} CSV files in {}",
-        sequence_count * 2,
+        "\nSaved self-contained bundle (source, compiler, manifest, CSVs, report, checksums) in {}",
         output.display()
     )?;
     ui::report(&mut stdout, &summaries, &comparisons, n, ui::stdout_color())?;
