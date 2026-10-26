@@ -48,6 +48,9 @@ struct Args {
     /// Exit with an error after saving if controls warn, are absent, or lack enough trials.
     #[arg(long)]
     strict_controls: bool,
+    /// Verify and summarize independent-seed bundles without simulating.
+    #[arg(long, num_args = 2..)]
+    summarize_runs: Vec<PathBuf>,
 }
 
 /// Atomically reserve a new directory, including on simultaneous invocations.
@@ -134,6 +137,10 @@ fn resolve_reference(schedules: &[Schedule], requested: &str) -> Result<String, 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if !args.summarize_runs.is_empty() {
+        validation::write_summary(&args.summarize_runs, &mut std::io::stdout().lock())?;
+        return Ok(());
+    }
     if let Some(path) = &args.verify_run {
         let count = artifacts::verify(path)?;
         println!("Verified {count} artifact checksums in {}", path.display());

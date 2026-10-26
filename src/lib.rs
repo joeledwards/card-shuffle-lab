@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod artifacts;
 mod control_checks;
+pub mod validation;
 pub use control_checks::{control_health, CheckStatus, ControlHealth};
 mod analysis;
 mod simulation;
@@ -246,7 +247,7 @@ pub fn diagnostics(deck: &[usize]) -> Diagnostics {
     }
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Moments {
     pub count: u64,
     pub mean: f64,

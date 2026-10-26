@@ -169,3 +169,27 @@ unique stream prefixes across 1,024 trials and near u64::MAX, including the old
 addressed trials (fixed seed, broad six-standard-error regression bounds).
 Replay across modes/workers remains covered. These are isolated tests, not a
 corrected 52-card experiment. No corrected full experiment was run.
+
+### Preserved evidence, control guards, and independent setup
+
+36 isolated unit tests passed; formatting, Clippy with warnings denied, shell
+syntax checks, and diff whitespace checks passed. New tests cover conservative
+control alarms, saved-build integrity/tampering, and cross-seed compatibility,
+distinct seeds, and integrity rejection.
+
+Explicitly authorized experiments: all 26 cases, 52 cards, 100,000 trials each,
+three seeds (20261026/27/28), 7.8 million total trials. All controls were OK and
+all bundles verified. Results, effects, source/archive hashes, and limitations
+are recorded in docs/validation-followup.md. Raw bundles/logs and their ZIP stay
+under ignored output/; no raw historical user run was available to recover.
+
+A cold source-copy setup with its own toolchain/cache was tested on x86_64 Linux.
+The initial missing-xz failure was fixed with an optional existing-Python stdlib
+unpacking fallback, then setup succeeded from another clean copy. No Python
+packages/environment or host-global tool installation was required. Its 36 unit
+tests passed. Full small CLI runs (26 cases, eight cards, 1,000 trials) in both
+parallel modes had byte-identical CSVs and identical summaries/comparisons;
+caller cwd was preserved. Both 78-file bundles verified. Additional checks
+confirmed unavailable Git metadata for the Git-free copy, no redundant rebuild
+on repeated help, and strict failure for a no-control suite with saved results
+still verifiable. Interactive terminal appearance and other OSes were not tested.

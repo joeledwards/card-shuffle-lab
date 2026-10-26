@@ -1,0 +1,21 @@
+#!/bin/sh
+# Explicitly runs experiments: three independent seeds, all built-in cases.
+set -eu
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+trials=${SHUFFLE_VALIDATION_TRIALS:-100000}
+root=${1:-output/validation-$(date -u +%Y%m%dT%H%M%SZ)-$$}
+mkdir -p "$(dirname -- "$root")"
+mkdir "$root"
+printf 'Independent-seed validation: 3 runs, %s trials per case each\nArtifacts/logs: %s\n' "$trials" "$root"
+for seed in 20261026 20261027 20261028; do
+    printf 'Starting seed %s; detailed feedback: %s/progress-%s.log\n' "$seed" "$root" "$seed"
+    if ! "$repo_dir/scripts/lab" --trials "$trials" --seed "$seed" --strict-controls --output "$root/seed-$seed" \
+        > "$root/terminal-$seed.txt" 2> "$root/progress-$seed.log"; then
+        printf 'Run failed; inspect %s/progress-%s.log and its saved bundle\n' "$root" "$seed" >&2
+        exit 1
+    fi
+    "$repo_dir/scripts/lab" --verify-run "$root/seed-$seed"
+done
+"$repo_dir/scripts/lab" --summarize-runs "$root/seed-20261026" "$root/seed-20261027" "$root/seed-20261028" > "$root/summary.txt"
+cat "$root/summary.txt"
+printf '\nValidation complete. Preserved bundles and summary: %s\n' "$root"

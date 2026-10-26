@@ -224,16 +224,15 @@ fatigue, or error penalties. The manifest records the default basis alongside
 actual configured values. The grid labels handling time `Human Time s`.
 
 
-### Schema 4: evidence bundles
+### Schema 4: evidence bundles and conservative control health
 
 Schema 4 retains RNG protocol 2 and adds build provenance, command arguments,
-a sealed run bundle. Compile-time source bytes and
+control-health details, and a sealed run bundle. Compile-time source bytes and
 Cargo.lock are embedded and written to source/ alongside compiler version and
 Git metadata. Source-content hashes are authoritative; Git metadata alone is
 insufficient for uncommitted builds. The bundle includes a plain report and
 SHA-256 inventory. Verification rejects changed/missing/extra files and symlinks;
 checksums do not establish authenticity. A run is incomplete until sealed.
-
 
 Single-operation Fisher–Yates/insertion controls are checked on all four means
 against their analytic expectations. With >=1000 trials, a deviation exceeding
@@ -243,3 +242,9 @@ Missing controls or insufficient diagnostics/trials are labeled explicitly.
 The guard is a conservative heuristic under a normal approximation; it is not
 an exact familywise test or proof of correct permutation sampling. Strict mode
 preserves evidence then returns an unsuccessful exit unless controls are OK.
+
+Cross-seed analysis verifies bundle integrity, distinct seeds, common source and
+configuration, and OK control health before reporting mean ranges and difference
+interval signs. It does not pool observations or call those ranges confidence
+intervals. The bootstrap is explicit, pinned to Rust 1.99.1; runtime wrappers
+remain offline and preserve the caller's directory.

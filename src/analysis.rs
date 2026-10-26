@@ -1,9 +1,9 @@
 //! Comparisons use independent schedule streams, not paired trial differences.
 use crate::{Moments, Schedule};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Summary {
     pub schedule: Schedule,
     pub diagnostics: BTreeMap<String, Moments>,
@@ -11,7 +11,7 @@ pub struct Summary {
     pub estimated_handling_seconds_hypothesis: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MeanDifference {
     pub candidate_trials: u64,
     pub reference_trials: u64,
@@ -44,7 +44,7 @@ impl MeanDifference {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduleComparison {
     pub candidate: String,
     pub candidate_stream_id: u64,

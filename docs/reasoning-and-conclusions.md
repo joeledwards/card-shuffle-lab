@@ -170,3 +170,12 @@ handling times before making practical recommendations. If conclusions about
 actual technique are desired, measure real cuts, release clumps, packet sizes,
 errors, and handling-time variability, then validate human profiles against data.
 More simulation trials reduce sampling error; they cannot repair a wrong model.
+
+
+## Subsequent independent validation
+
+[The validation follow-up](validation-followup.md) records three new fully
+preserved runs with 100,000 trials per case, automatic control checks, and
+fresh-checkout verification. Those runs confirm the main model-specific trends
+across independent seeds; they do not retroactively supply provenance for the
+user-pasted million-trial table above.

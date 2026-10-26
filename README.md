@@ -21,7 +21,9 @@ will change. The historical validation table is retained but marked invalid.
 [Reasoning and current conclusions](docs/reasoning-and-conclusions.md) records
 model choices, diagnostic interpretation, the RNG correction, and the corrected
 user-supplied results. It separates observed model behavior from claims about
-human shuffling and lists remaining validation work.
+human shuffling and lists remaining validation work. The
+[validation follow-up](docs/validation-followup.md) records the completed
+three-seed experiment and fresh-checkout checks.
 
 ## Run it
 
@@ -135,7 +137,7 @@ tooling or dependencies are missing, rerun `scripts/setup` explicitly.
 
 Every new schema-4 run creates a self-contained bundle containing:
 
-- `manifest.json`: configuration, RNG protocol 2, comparisons,
+- `manifest.json`: configuration, RNG protocol 2, comparisons, control checks,
   and build provenance.
 - CSV aggregates and a plain `report.txt` matching the terminal analysis.
 - `source/`: the exact build-time source, lockfile, specs, docs, and executable
@@ -167,6 +169,30 @@ uniform controls are labeled not checked. One missed 95% interval is not an
 alarm. This conservative normal-approximation guard is not a proof, an exact
 familywise test, or a replacement for tests of richer distributions.
 `--strict-controls` saves results then exits unsuccessfully unless checks are OK.
+
+## Repeat over independent seeds
+
+```sh
+./scripts/validate
+```
+
+This explicitly runs all 26 cases with 100,000 trials each for seeds 20261026,
+20261027, and 20261028: 7.8 million total trials. It saves three complete bundles,
+per-run terminal/progress logs, and a cross-seed summary. Each stage reports its
+seed and log path. `SHUFFLE_VALIDATION_TRIALS=1000 ./scripts/validate` is a shorter
+check. Passing an output directory as the script's argument chooses its location;
+it must not already exist.
+
+The read-only summary command can also analyze existing compatible bundles:
+
+```sh
+./scripts/lab --summarize-runs output/RUN-A output/RUN-B output/RUN-C
+```
+
+It verifies checksums, distinct seeds, OK controls, source identity, trial counts,
+models, and shuffle sequence definitions before reporting ranges of per-seed
+means and reference-difference interval signs. Ranges are not confidence
+intervals. This tests stability over random seeds, not realism of human models.
 
 ## Experiments (commands to run explicitly)
 
@@ -268,13 +294,12 @@ want the progress history as well as the report:
 
 JSON field names and the `--schedules` custom-file option retain their existing
 names for compatibility; user-facing descriptions call them shuffle sequences.
-Standalone setup remains future work. The no-argument command runs the small demo;
-increase `--trials` for a larger experiment.
+The no-argument command runs the default experiment; use `--trials` to adjust its size.
 
 ## Compare overhand placements
 
 The default suite includes before, center, after, and spaced variants of 5R+2O.
-It keeps the original five schedules and their RNG streams unchanged. Choose a
+It keeps existing case stream IDs unchanged within RNG protocol 2. Choose a
 reference to compare against all other schedules:
 
 ```sh
