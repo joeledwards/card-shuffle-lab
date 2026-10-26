@@ -36,21 +36,32 @@ struct Summary {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    if !args.riffle_seconds.is_finite() || args.riffle_seconds < 0.0
-        || !args.overhand_seconds.is_finite() || args.overhand_seconds < 0.0 {
+    if !args.riffle_seconds.is_finite()
+        || args.riffle_seconds < 0.0
+        || !args.overhand_seconds.is_finite()
+        || args.overhand_seconds < 0.0
+    {
         return Err("handling times must be finite and nonnegative".into());
     }
     let schedules: Vec<Schedule> = match &args.schedules {
         Some(path) => serde_json::from_slice(&fs::read(path)?)?,
         None => default_schedules(),
     };
-    if schedules.is_empty() { return Err("at least one schedule is required".into()); }
+    if schedules.is_empty() {
+        return Err("at least one schedule is required".into());
+    }
     let mut ids = std::collections::HashSet::new();
     let mut names = std::collections::HashSet::new();
     for schedule in &schedules {
-        if schedule.name.is_empty() || !ids.insert(schedule.stream_id) || !names.insert(&schedule.name) {
+        if schedule.name.is_empty()
+            || !ids.insert(schedule.stream_id)
+            || !names.insert(&schedule.name)
+        {
             return Err("schedules require unique stream IDs and unique nonempty names".into());
         }
+    }
+    if let Some(parent) = args.output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
     }
     fs::create_dir(&args.output)?;
     let start = Instant::now();
@@ -63,38 +74,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for trial in 0..args.trials {
             let mut deck: Vec<_> = (0..n).collect();
             let mut rng = trial_rng(args.seed, schedule.stream_id, trial);
-            for &op in &schedule.operations { apply(&mut deck, op, &mut rng); }
+            for &op in &schedule.operations {
+                apply(&mut deck, op, &mut rng);
+            }
             let d = diagnostics(&deck);
             for (name, value) in [
                 ("mean_absolute_displacement", d.mean_absolute_displacement),
-                ("mean_original_neighbor_distance", d.mean_original_neighbor_distance),
-                ("original_neighbor_adjacency_fraction", d.original_neighbor_adjacency_fraction),
+                (
+                    "mean_original_neighbor_distance",
+                    d.mean_original_neighbor_distance,
+                ),
+                (
+                    "original_neighbor_adjacency_fraction",
+                    d.original_neighbor_adjacency_fraction,
+                ),
                 ("increasing_runs", d.increasing_runs),
-            ] { metrics.entry(name.into()).or_default().add(value); }
+            ] {
+                metrics.entry(name.into()).or_default().add(value);
+            }
             let mut inverse = vec![0; n];
-            for (p, &c) in deck.iter().enumerate() { positions[c][p] += 1; inverse[c] = p; }
-            for pair in inverse.windows(2) { neighbor_distances[pair[0].abs_diff(pair[1])] += 1; }
+            for (p, &c) in deck.iter().enumerate() {
+                positions[c][p] += 1;
+                inverse[c] = p;
+            }
+            for pair in inverse.windows(2) {
+                neighbor_distances[pair[0].abs_diff(pair[1])] += 1;
+            }
         }
         let id = schedule.stream_id;
         let mut file = fs::File::create(args.output.join(format!("positions-{id}.csv")))?;
         writeln!(file, "card,position,count")?;
         for (card, row) in positions.iter().enumerate() {
-            for (position, count) in row.iter().enumerate() { writeln!(file, "{card},{position},{count}")?; }
+            for (position, count) in row.iter().enumerate() {
+                writeln!(file, "{card},{position},{count}")?;
+            }
         }
         let mut file = fs::File::create(args.output.join(format!("neighbor-distances-{id}.csv")))?;
         writeln!(file, "distance,count,uniform_probability")?;
         for (distance, count) in neighbor_distances.iter().enumerate().skip(1) {
-            let probability = 2.0 * (n-distance) as f64 / (n as f64 * (n-1) as f64);
+            let probability = 2.0 * (n - distance) as f64 / (n as f64 * (n - 1) as f64);
             writeln!(file, "{distance},{count},{probability}")?;
         }
-        let time = schedule.operations.iter().try_fold(0.0, |total, op| match op {
-            Operation::Riffle => Some(total + args.riffle_seconds),
-            Operation::Overhand => Some(total + args.overhand_seconds),
-            _ => None,
+        let time = schedule
+            .operations
+            .iter()
+            .try_fold(0.0, |total, op| match op {
+                Operation::Riffle => Some(total + args.riffle_seconds),
+                Operation::Overhand => Some(total + args.overhand_seconds),
+                _ => None,
+            });
+        let cis = metrics
+            .iter()
+            .map(|(name, m)| (name.clone(), m.mean_ci95()))
+            .collect();
+        summaries.push(Summary {
+            schedule,
+            diagnostics: metrics,
+            mean_ci95_normal_approximation: cis,
+            estimated_handling_seconds_hypothesis: time,
         });
-        let cis = metrics.iter().map(|(name, m)| (name.clone(), m.mean_ci95())).collect();
-        summaries.push(Summary { schedule, diagnostics: metrics,
-            mean_ci95_normal_approximation: cis, estimated_handling_seconds_hypothesis: time });
     }
     let manifest = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
@@ -111,7 +149,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "compute_seconds": start.elapsed().as_secs_f64(),
         "summaries": summaries,
     });
-    fs::write(args.output.join("manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
+    fs::write(
+        args.output.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
     println!("Wrote {}", args.output.display());
     Ok(())
 }

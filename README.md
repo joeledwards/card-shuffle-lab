@@ -8,7 +8,7 @@ and CSV/JSON outputs support future Julia or Python collaboration.
 
 ## Explicit local tooling
 
-No toolchain is installed by this project, and the wrapper never bootstraps it.
+The Cargo wrapper never installs or bootstraps tooling.
 Rust, Cargo, their caches, and future toolchain files belong under the workspace's
 `.tools/rust/`. No Python environment is needed.
 
@@ -22,19 +22,49 @@ export RUSTUP_HOME="$workspace_dir/.tools/rust/rustup"
 # Run your verified installer; do not use a host-global installation:
 /path/to/rustup-init --no-modify-path --profile minimal --default-toolchain stable -y
 ./scripts/cargo-local generate-lockfile
-./scripts/cargo-local test --lib
+./scripts/cargo-local test --lib --locked
 ```
 
-Have the developer retain Cargo.lock in version control after initial dependency
-resolution. No lockfile is fabricated here. Dependency resolution and builds
+Cargo.lock is now generated and should be retained in version control. Use
+`--locked` for tests and experiments to prevent dependency resolution changes. Dependency resolution and builds
 require downloads on first use. The wrapper derives paths from its own location
 and preserves the caller's working directory; run the following from this repo,
 or supply Cargo's --manifest-path when calling it from elsewhere.
 
+### Linker in minimal Linux environments
+
+This workspace has no system `cc`. A checksum-verified Zig 0.17.0 distribution
+is installed under `.tools/rust/linker/zig-x86_64-linux-0.17.0`, with
+`version.txt` containing `0.17.0`. `scripts/cargo-local` selects
+`scripts/linker-local` when no `cc` exists. Both Zig cache directories remain
+under `.tools/rust/linker/`; no host package installation is needed. The wrapper
+currently supports this fallback for x86_64 GNU/Linux only.
+
+For a new environment, explicitly download the official archive and verify it
+before extracting (commands from the repository directory):
+
+```sh
+workspace_dir=$(CDPATH= cd ../.. && pwd)
+linker_dir="$workspace_dir/.tools/rust/linker"
+mkdir -p "$linker_dir"
+curl --fail --location --proto '=https' --tlsv1.2 \
+  https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz \
+  -o "$linker_dir/zig.tar.xz"
+(cd "$linker_dir" && printf '%s  zig.tar.xz\n' \
+  1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026 | sha256sum -c -)
+tar -xJf "$linker_dir/zig.tar.xz" -C "$linker_dir"
+printf '%s\n' 0.17.0 > "$linker_dir/version.txt"
+```
+
+Stop if download or verification fails. Rustfmt and Clippy are optional Rust
+components; install explicitly using the workspace-local rustup with CARGO_HOME
+and RUSTUP_HOME set as above. See [validation results](spec/validation.md) for
+the installed compiler and completed checks.
+
 ## Experiments (commands to run explicitly)
 
 ```sh
-./scripts/cargo-local run --release -- --deck-size 52 --trials 100 --seed 20261026 --output output/smoke-001
+./scripts/cargo-local run --release --locked -- --deck-size 52 --trials 100 --seed 20261026 --output output/smoke-001
 ```
 
 The output directory must not already exist. Results contain a versioned
