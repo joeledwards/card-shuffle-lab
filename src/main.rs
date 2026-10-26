@@ -1,6 +1,5 @@
 use card_shuffle_lab::*;
 use clap::Parser;
-use serde::Serialize;
 use std::{collections::BTreeMap, fs, io::Write, path::PathBuf, time::Instant};
 
 #[derive(Parser)]
@@ -18,20 +17,18 @@ struct Args {
     /// JSON array of Schedule objects; omitted selects controls and primary comparisons.
     #[arg(long)]
     schedules: Option<PathBuf>,
+    /// Add before, center, and spaced 5R+2O placements to the default suite.
+    #[arg(long, conflicts_with = "schedules")]
+    placement_comparison: bool,
+    /// Compare other schedules against this name (default: 7R, or first custom schedule).
+    #[arg(long)]
+    reference: Option<String>,
     /// Hypothetical constant handling seconds per riffle.
     #[arg(long, default_value_t = 3.0)]
     riffle_seconds: f64,
     /// Hypothetical constant handling seconds per overhand.
     #[arg(long, default_value_t = 2.0)]
     overhand_seconds: f64,
-}
-
-#[derive(Serialize)]
-struct Summary {
-    schedule: Schedule,
-    diagnostics: BTreeMap<String, Moments>,
-    mean_ci95_normal_approximation: BTreeMap<String, Option<[f64; 2]>>,
-    estimated_handling_seconds_hypothesis: Option<f64>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let schedules: Vec<Schedule> = match &args.schedules {
         Some(path) => serde_json::from_slice(&fs::read(path)?)?,
+        None if args.placement_comparison => placement_schedules(),
         None => default_schedules(),
     };
     if schedules.is_empty() {
@@ -59,6 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("schedules require unique stream IDs and unique nonempty names".into());
         }
+    }
+    let reference = args.reference.clone().unwrap_or_else(|| {
+        if schedules.iter().any(|s| s.name == "7R") {
+            "7R".into()
+        } else {
+            schedules[0].name.clone()
+        }
+    });
+    if !schedules.iter().any(|s| s.name == reference) {
+        return Err(format!("reference schedule {reference:?} is missing").into());
     }
     if let Some(parent) = args.output.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
@@ -134,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             estimated_handling_seconds_hypothesis: time,
         });
     }
+    let comparisons = compare_summaries(&summaries, &reference)?;
     let manifest = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
         "program_version": env!("CARGO_PKG_VERSION"),
@@ -148,6 +157,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "uniform_targets": {"neighbor_adjacency": 2.0 / n as f64, "neighbor_distance": (n+1) as f64 / 3.0},
         "compute_seconds": start.elapsed().as_secs_f64(),
         "summaries": summaries,
+        "comparison_method": "candidate minus reference; independent trial means; pointwise approximate 95% normal intervals; no multiplicity correction",
+        "comparison_reference": reference,
+        "comparisons": comparisons,
     });
     fs::write(
         args.output.join("manifest.json"),
@@ -155,4 +167,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("Wrote {}", args.output.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn placement_option_parsing() {
+        let args = Args::try_parse_from([
+            "lab",
+            "--output",
+            "result",
+            "--placement-comparison",
+            "--reference",
+            "5R+2O-after",
+        ])
+        .unwrap();
+        assert!(args.placement_comparison);
+        assert_eq!(args.reference.as_deref(), Some("5R+2O-after"));
+        assert!(Args::try_parse_from([
+            "lab",
+            "--output",
+            "result",
+            "--placement-comparison",
+            "--schedules",
+            "custom.json"
+        ])
+        .is_err());
+    }
 }

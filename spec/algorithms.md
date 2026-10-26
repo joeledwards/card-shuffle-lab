@@ -84,3 +84,51 @@ also retained. Pooled neighbor pairs are correlated within a trial: do not
 use their count as an independent sample size. For a uniform permutation,
 P(distance=d)=2(N-d)/(N(N-1)), adjacency=2/N, E(distance)=(N+1)/3.
 These diagnostics are not total-variation distance or a complete randomness test.
+
+## Placement suite and comparisons (output schema 2)
+
+Algorithm laws above remain version 1. Output schema 2 adds `comparisons`,
+`comparison_reference`, and `comparison_method`; original summary and histogram
+fields remain. `--placement-comparison` selects the five original schedules plus
+these distinct 5R+2O placements (R=riffle, O=overhand):
+
+| Name suffix | Chronological operations | Stream ID |
+| --- | --- | --- |
+| before | O O R R R R R | 6 |
+| center | R R O O R R R | 7 |
+| spaced | R R O R O R R | 8 |
+
+The original after placement remains R R R R R O O with ID 4. The center group
+follows floor(5/2) riffles. The spaced variant has riffle gaps 2,1,2 around the
+overhands. These are fixed placements; seeded-random and general count-based
+placement generation remain future work. The placement flag conflicts with
+custom schedule files; custom files can express additional placements directly.
+
+Select the reference with `--reference NAME`. Without it, use `7R` if present,
+otherwise the first schedule. A missing reference is rejected before creating
+output. Compare every other schedule against that reference; no self-comparison
+is emitted. Unique names and stream IDs are required. All diagnostics must have
+the same keys in each summary.
+
+For diagnostic X and candidate A versus reference B, report delta=mean(A)-mean(B)
+in X's original units. With sample variances s_A² and s_B² over n_A and n_B
+independent trials, the interval is:
+
+`delta +/- 1.96 * sqrt(s_A²/n_A + s_B²/n_B)`.
+
+This is a normal approximation, not a Welch t interval. A missing sample gives
+null difference; fewer than two trials in either group gives null interval.
+The CLI already requires at least two trials per schedule. Shared trial indices
+do not imply paired observations: the schedules use distinct pseudorandom
+streams, modeled as independent. Do not use this formula for common-random-number
+coupling. The tests include unequal sample sizes and check the sign convention.
+
+Intervals are pointwise and unadjusted for multiple diagnostics/comparisons.
+Comparisons sharing a reference are correlated; do not treat them as independent
+evidence. Positive delta means a larger diagnostic, not greater randomness.
+An interval excluding zero is not proof of a difference in total-variation
+distance. Handling-time differences are candidate minus reference under the
+constant-time hypothesis, with null for comparisons involving uniform controls.
+All four 5R+2O placements have identical hypothetical handling time, so their
+comparison holds operation counts and assumed time fixed; comparison against
+7R holds total operation count fixed, not handling time.

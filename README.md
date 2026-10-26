@@ -86,9 +86,33 @@ Use `--schedules schedules.json` for other placements, for example:
 
 Use `--riffle-seconds` and `--overhand-seconds` to vary handling-time hypotheses.
 Compare all diagnostics and their uncertainty against controls; neither uniform
-control is inherently more random. A CI on each schedule mean is not a CI on
-the difference between schedules. No experimental results or performance claims
+control is inherently more random. The manifest also reports differences from a reference schedule with independent-sample
+confidence intervals; these differ from intervals on individual schedule means. No experimental results or performance claims
 are asserted until experiments are explicitly run and reviewed.
+
+## Compare overhand placements
+
+The optional placement suite adds before, center, and spaced variants of 5R+2O.
+It keeps the original five schedules and their RNG streams unchanged. Choose a
+reference to compare against all other schedules:
+
+```sh
+# Proposed command; this placement experiment has not been run.
+./scripts/cargo-local run --release --locked --offline -- \
+  --placement-comparison --reference 5R+2O-after \
+  --deck-size 52 --trials 100 --seed 20261026 --output output/placement-001
+```
+
+Without `--reference`, comparisons use `7R` when present, otherwise the first
+schedule. Custom `--schedules` files support the same reference option but cannot
+be combined with `--placement-comparison`.
+
+Output schema 2 adds `comparisons` to the manifest, including candidate/reference
+names and stream IDs, per-diagnostic candidate-minus-reference mean differences,
+approximate pointwise 95% confidence intervals, and hypothetical handling-time
+differences. Positive differences mean larger diagnostics, not better mixing.
+The intervals assume independent schedule streams, use normal approximations,
+and have no multiple-comparison correction. They do not establish uniformity.
 
 ## Scope and next steps
 
@@ -98,9 +122,9 @@ hypotheses. No diagnostic here measures proven total-variation distance.
 
 Initial implementation includes algorithm unit tests, permutation/replay checks,
 deterministic packet examples, streaming trial moments, and aggregate CSVs.
-Still to implement: human cut/clump/error profiles with restart costs; generated
+Still to implement: human cut/clump/error profiles with restart costs; generalized/random
 placement families; displacement and multiple-separation histograms; positional
-uncertainty; effect-size comparisons; plotting and reports; richer time models;
+uncertainty; multiple-comparison analysis; plotting and reports; richer time models;
 and empirical control validation. Large simulations, benchmarks, and the full
 experimental protocol require separate authorization. Unit tests alone do not
 validate the human models or demonstrate statistical agreement of controls.

@@ -55,3 +55,18 @@ The hybrid has more surviving neighbor adjacency in this sample. Its estimated
 3 seconds/riffle and 2 seconds/overhand. No human calibration, equal-time study,
 large experiment, or benchmark was performed. Effect-size intervals, sensitivity
 studies, and additional independent seeds remain future analysis.
+
+## Placement/comparison implementation validation
+
+After adding output schema 2 and the optional placement suite:
+
+- `cargo test --lib --bin card-shuffle-lab --locked --offline`: 12 tests passed.
+- `cargo fmt --check` and Clippy with `--all-targets --locked --offline -- -D warnings`: passed.
+- New tests cover fixed schedule counts/placement, preservation of baseline IDs
+  and sequences, unequal-size independent mean differences, sign reversal,
+  missing/constant samples, reference selection in comparisons, invalid summary
+  sets, and CLI option parsing/conflicts.
+
+No new simulation experiment or end-to-end execution was run for these changes.
+The earlier smoke observations describe the previous schema 1 implementation.
+The README placement command is proposed, not an experimental result.

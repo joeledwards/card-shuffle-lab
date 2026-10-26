@@ -4,7 +4,10 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 1;
+mod analysis;
+pub use analysis::{compare_summaries, MeanDifference, ScheduleComparison, Summary};
+
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Operation {
@@ -53,6 +56,25 @@ pub fn default_schedules() -> Vec<Schedule> {
             ],
         },
     ]
+}
+
+/// Primary schedules plus three fixed placements of the same five riffles and
+/// two overhands. Existing IDs and operations remain unchanged for replay.
+pub fn placement_schedules() -> Vec<Schedule> {
+    use Operation::{Overhand as O, Riffle as R};
+    let mut schedules = default_schedules();
+    for (name, stream_id, operations) in [
+        ("5R+2O-before", 6, vec![O, O, R, R, R, R, R]),
+        ("5R+2O-center", 7, vec![R, R, O, O, R, R, R]),
+        ("5R+2O-spaced", 8, vec![R, R, O, R, O, R, R]),
+    ] {
+        schedules.push(Schedule {
+            name: name.into(),
+            stream_id,
+            operations,
+        });
+    }
+    schedules
 }
 
 /// Separate ChaCha streams for every (schedule, trial); no hash-dependent seeding.
@@ -193,11 +215,15 @@ impl Moments {
         self.mean += delta / self.count as f64;
         self.m2 += delta * (value - self.mean);
     }
-    pub fn mean_ci95(&self) -> Option<[f64; 2]> {
+    /// Estimated sampling variance of the mean across independent trials.
+    pub fn mean_variance(&self) -> Option<f64> {
         if self.count < 2 {
             return None;
         }
-        let half = 1.96 * (self.m2 / (self.count - 1) as f64 / self.count as f64).sqrt();
+        Some(self.m2 / (self.count - 1) as f64 / self.count as f64)
+    }
+    pub fn mean_ci95(&self) -> Option<[f64; 2]> {
+        let half = 1.96 * self.mean_variance()?.sqrt();
         Some([self.mean - half, self.mean + half])
     }
 }
@@ -205,6 +231,58 @@ impl Moments {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn placement_family_has_fixed_counts_unique_ids_and_stable_baselines() {
+        let schedules = placement_schedules();
+        let defaults = default_schedules();
+        assert_eq!(
+            serde_json::to_value(&schedules[..5]).unwrap(),
+            serde_json::to_value(defaults).unwrap()
+        );
+        let ids: std::collections::HashSet<_> = schedules.iter().map(|s| s.stream_id).collect();
+        assert_eq!(ids.len(), schedules.len());
+        let hybrids: Vec<_> = schedules
+            .iter()
+            .filter(|s| s.name.starts_with("5R+2O"))
+            .collect();
+        assert_eq!(hybrids.len(), 4);
+        for s in &hybrids {
+            assert_eq!(
+                s.operations
+                    .iter()
+                    .filter(|&&op| op == Operation::Riffle)
+                    .count(),
+                5
+            );
+            assert_eq!(
+                s.operations
+                    .iter()
+                    .filter(|&&op| op == Operation::Overhand)
+                    .count(),
+                2
+            );
+        }
+        for (i, a) in hybrids.iter().enumerate() {
+            for b in hybrids.iter().skip(i + 1) {
+                assert_ne!(a.operations, b.operations);
+            }
+        }
+        assert_eq!(schedules[5].operations[..2], [Operation::Overhand; 2]);
+        assert_eq!(schedules[6].operations[2..4], [Operation::Overhand; 2]);
+        assert_eq!(
+            schedules[7].operations,
+            vec![
+                Operation::Riffle,
+                Operation::Riffle,
+                Operation::Overhand,
+                Operation::Riffle,
+                Operation::Overhand,
+                Operation::Riffle,
+                Operation::Riffle
+            ]
+        );
+    }
+
     #[test]
     fn packet_direction() {
         assert_eq!(
