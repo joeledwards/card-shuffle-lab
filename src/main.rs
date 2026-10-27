@@ -4,7 +4,7 @@ use clap::Parser;
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
+    io::{BufWriter, Write},
     path::PathBuf,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -309,19 +309,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         context[2] = "Case step 2/3: save card-position counts".into();
                         progress.update(&context)?;
                         let id = schedules[case].stream_id;
-                        let mut file =
-                            fs::File::create(output.join(format!("positions-{id}.csv")))?;
+                        let mut file = BufWriter::new(fs::File::create(
+                            output.join(format!("positions-{id}.csv")),
+                        )?);
                         writeln!(file, "card,position,count")?;
                         for (card, row) in stats[case].positions.iter().enumerate() {
                             for (position, count) in row.iter().enumerate() {
                                 writeln!(file, "{card},{position},{count}")?;
                             }
                         }
+                        file.flush()?;
                         drop(file);
                         context[2] = "Case step 3/3: save original-neighbor distance counts".into();
                         progress.update(&context)?;
-                        let mut file =
-                            fs::File::create(output.join(format!("neighbor-distances-{id}.csv")))?;
+                        let mut file = BufWriter::new(fs::File::create(
+                            output.join(format!("neighbor-distances-{id}.csv")),
+                        )?);
                         writeln!(file, "distance,count,uniform_probability")?;
                         for (distance, count) in
                             stats[case].neighbor_distances.iter().enumerate().skip(1)
@@ -330,6 +333,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 2.0 * (n - distance) as f64 / (n as f64 * (n - 1) as f64);
                             writeln!(file, "{distance},{count},{probability}")?;
                         }
+                        file.flush()?;
                         drop(file);
                         finished[case] = true;
                         progress.case(case, args.trials, true);
